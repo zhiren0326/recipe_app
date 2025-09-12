@@ -1,0 +1,88 @@
+{
+  "recipeTypes": [
+    {
+      "id": "1",
+      "name": "Appetizers",
+      "icon": "restaurant_menu",
+      "color": "#FF6B6B",
+      "description": "Small dishes served before main course"
+    },
+    {
+      "id": "2",
+      "name": "Main Course",
+      "icon": "dinner_dining",
+      "color": "#4ECDC4",
+      "description": "Primary dish of a meal"
+    },
+    {
+      "id": "3",
+      "name": "Desserts",
+      "icon": "cake",
+      "color": "#FFD93D",
+      "description": "Sweet treats and confections"
+    },
+    {
+      "id": "4",
+      "name": "Beverages",
+      "icon": "local_cafe",
+      "color": "#6A5ACD",
+      "description": "Hot and cold drinks"
+    },
+    {
+      "id": "5",
+      "name": "Breakfast",
+      "icon": "breakfast_dining",
+      "color": "#FF9F1C",
+      "description": "Morning meal dishes"
+    },
+    {
+      "id": "6",
+      "name": "Salads",
+      "icon": "eco",
+      "color": "#95E77E",
+      "description": "Fresh and healthy greens"
+    },
+    {
+      "id": "7",
+      "name": "Soups",
+      "icon": "soup_kitchen",
+      "color": "#F4A460",
+      "description": "Warm and comforting bowls"
+    },
+    {
+      "id": "8",
+      "name": "Snacks",
+      "icon": "tapas",
+      "color": "#DDA0DD",
+      "description": "Quick bites and finger foods"
+    },
+    {
+      "id": "9",
+      "name": "Pasta",
+      "icon": "ramen_dining",
+      "color": "#CD853F",
+      "description": "Italian pasta dishes"
+    },
+    {
+      "id": "10",
+      "name": "Seafood",
+      "icon": "set_meal",
+      "color": "#20B2AA",
+      "description": "Fish and shellfish dishes"
+    },
+    {
+      "id": "11",
+      "name": "Vegetarian",
+      "icon": "grass",
+      "color": "#32CD32",
+      "description": "Plant-based meals"
+    },
+    {
+      "id": "12",
+      "name": "BBQ & Grill",
+      "icon": "outdoor_grill",
+      "color": "#B22222",
+      "description": "Grilled and barbecued items"
+    }
+  ]
+}
