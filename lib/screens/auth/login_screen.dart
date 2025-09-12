@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:recipe_app/screens/auth/register_screen.dart';
 
-
 import '../../services/auth_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/responsive_controller.dart';
 import '../../widgets/custom_text_field.dart';
-import '../home/home_screen.dart';
+import '../home/navigation_components.dart'; // Import the navigation wrapper
 import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -45,8 +44,11 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
         if (user != null && mounted) {
+          // Navigate to MainNavigationWrapper instead of HomeScreen
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            MaterialPageRoute(
+              builder: (_) => const MainNavigationWrapper(initialIndex: 0),
+            ),
           );
         }
       } catch (e) {
@@ -77,8 +79,11 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = await _authService.signInWithGoogle();
 
       if (user != null && mounted) {
+        // Navigate to MainNavigationWrapper instead of HomeScreen
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => const MainNavigationWrapper(initialIndex: 0),
+          ),
         );
       }
     } catch (e) {

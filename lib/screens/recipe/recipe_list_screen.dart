@@ -1,10 +1,11 @@
-// screens/recipes/recipe_list_screen.dart
+// screens/recipe/recipe_list_screen.dart
 import 'package:flutter/material.dart';
 import 'package:recipe_app/screens/recipe/recipe_detail_screen.dart';
 import 'package:recipe_app/screens/recipe/recipe_form_screen.dart';
 import 'package:recipe_app/screens/recipe/recipe_type.dart';
 
 import '../../services/recipe_service.dart';
+import '../../services/auth_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/responsive_controller.dart';
 
@@ -17,12 +18,14 @@ class RecipeListScreen extends StatefulWidget {
 
 class _RecipeListScreenState extends State<RecipeListScreen> {
   final RecipeService _recipeService = RecipeService();
+  final AuthService _authService = AuthService();
   List<Recipe> _recipes = [];
   List<Recipe> _filteredRecipes = [];
   List<RecipeType> _recipeTypes = [];
   String _selectedTypeId = 'all';
   String _searchQuery = '';
   bool _isLoading = true;
+  bool _showOnlyMyRecipes = true;
 
   @override
   void initState() {
@@ -32,13 +35,36 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    await _recipeService.initialize();
-    setState(() {
-      _recipeTypes = _recipeService.getRecipeTypes();
+
+    try {
+      await _recipeService.initialize();
+      await _recipeService.syncWithFirebase();
+
+      setState(() {
+        _recipeTypes = _recipeService.getRecipeTypes();
+        _loadRecipes();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading data: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _loadRecipes() {
+    if (_showOnlyMyRecipes) {
+      _recipes = _recipeService.getUserRecipes();
+    } else {
       _recipes = _recipeService.getAllRecipes();
-      _filteredRecipes = _recipes;
-      _isLoading = false;
-    });
+    }
+    _filterRecipes();
   }
 
   void _filterRecipes() {
@@ -47,9 +73,13 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
         final matchesType = _selectedTypeId == 'all' || recipe.typeId == _selectedTypeId;
         final matchesSearch = _searchQuery.isEmpty ||
             recipe.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            recipe.description.toLowerCase().contains(_searchQuery.toLowerCase());
+            recipe.description.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+            recipe.createdByName.toLowerCase().contains(_searchQuery.toLowerCase());
         return matchesType && matchesSearch;
       }).toList();
+
+      // Sort by creation date (newest first)
+      _filteredRecipes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     });
   }
 
@@ -66,6 +96,13 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
     setState(() {
       _searchQuery = query;
       _filterRecipes();
+    });
+  }
+
+  void _toggleRecipeView() {
+    setState(() {
+      _showOnlyMyRecipes = !_showOnlyMyRecipes;
+      _loadRecipes();
     });
   }
 
@@ -93,6 +130,64 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
     }
   }
 
+  Future<void> _deleteRecipe(Recipe recipe) async {
+    final user = _authService.currentUser;
+    if (user == null || recipe.createdBy != user.uid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You can only delete your own recipes'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Recipe'),
+        content: Text('Are you sure you want to delete "${recipe.name}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.errorColor,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _recipeService.deleteRecipe(recipe.id);
+        _loadData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Recipe deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting recipe: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ResponsiveBuilder(
@@ -100,13 +195,21 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
         return Scaffold(
           appBar: AppBar(
             title: Text(
-              'Recipe Book',
+              _showOnlyMyRecipes ? 'My Recipes' : 'All Recipes',
               style: TextStyle(
                 fontSize: ResponsiveController.fontSize(20),
                 fontWeight: FontWeight.bold,
               ),
             ),
             actions: [
+              IconButton(
+                icon: Icon(
+                  _showOnlyMyRecipes ? Icons.person : Icons.public,
+                  size: ResponsiveController.iconSize(24),
+                ),
+                onPressed: _toggleRecipeView,
+                tooltip: _showOnlyMyRecipes ? 'Show All Recipes' : 'Show My Recipes',
+              ),
               IconButton(
                 icon: Icon(
                   Icons.add,
@@ -121,6 +224,7 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
               : Column(
             children: [
               _buildFilters(),
+              _buildViewToggle(),
               Expanded(
                 child: _filteredRecipes.isEmpty
                     ? _buildEmptyState()
@@ -233,6 +337,46 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
     );
   }
 
+  Widget _buildViewToggle() {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveController.spacing(16),
+        vertical: ResponsiveController.spacing(8),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _showOnlyMyRecipes ? Icons.person : Icons.public,
+            size: ResponsiveController.iconSize(20),
+            color: AppColors.primaryColor,
+          ),
+          SizedBox(width: ResponsiveController.spacing(8)),
+          Text(
+            _showOnlyMyRecipes
+                ? 'Showing your recipes (${_filteredRecipes.length})'
+                : 'Showing all recipes (${_filteredRecipes.length})',
+            style: TextStyle(
+              fontSize: ResponsiveController.fontSize(14),
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const Spacer(),
+          TextButton(
+            onPressed: _toggleRecipeView,
+            child: Text(
+              _showOnlyMyRecipes ? 'Show All' : 'Show Mine',
+              style: TextStyle(
+                fontSize: ResponsiveController.fontSize(12),
+                color: AppColors.primaryColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRecipeGrid() {
     // Initialize ResponsiveController first
     ResponsiveController.init(context);
@@ -257,6 +401,9 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
   }
 
   Widget _buildRecipeCard(Recipe recipe) {
+    final user = _authService.currentUser;
+    final isOwner = user != null && recipe.createdBy == user.uid;
+
     return GestureDetector(
       onTap: () => _navigateToRecipeDetail(recipe),
       child: Card(
@@ -345,6 +492,72 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
                         ),
                       ),
                     ),
+                    // Owner badge
+                    if (isOwner)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryColor,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Mine',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    // Action buttons for owner
+                    if (isOwner)
+                      Positioned(
+                        bottom: 8,
+                        right: 8,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.9),
+                                shape: BoxShape.circle,
+                              ),
+                              child: IconButton(
+                                icon: const Icon(Icons.edit, size: 16),
+                                onPressed: () => _navigateToRecipeForm(recipe: recipe),
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(
+                                  minWidth: 24,
+                                  minHeight: 24,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.9),
+                                shape: BoxShape.circle,
+                              ),
+                              child: IconButton(
+                                icon: Icon(Icons.delete, size: 16, color: AppColors.errorColor),
+                                onPressed: () => _deleteRecipe(recipe),
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(
+                                  minWidth: 24,
+                                  minHeight: 24,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -367,6 +580,17 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
+                    Text(
+                      'by ${recipe.createdByName}',
+                      style: TextStyle(
+                        fontSize: ResponsiveController.fontSize(10),
+                        color: AppColors.primaryColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
                     Expanded(
                       child: Text(
                         recipe.description,
@@ -384,7 +608,7 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
                         Icon(Icons.timer, size: 12, color: Colors.grey),
                         const SizedBox(width: 4),
                         Text(
-                          '${recipe.preparationTime + recipe.cookingTime} min',
+                          '${recipe.totalTime} min',
                           style: TextStyle(
                             fontSize: ResponsiveController.fontSize(10),
                             color: Colors.grey.shade600,
@@ -428,7 +652,7 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
           ),
           SizedBox(height: ResponsiveController.spacing(16)),
           Text(
-            'No recipes found',
+            _showOnlyMyRecipes ? 'No recipes created yet' : 'No recipes found',
             style: TextStyle(
               fontSize: ResponsiveController.fontSize(18),
               color: Colors.grey.shade600,
@@ -436,14 +660,31 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
           ),
           SizedBox(height: ResponsiveController.spacing(8)),
           Text(
-            _searchQuery.isNotEmpty
+            _showOnlyMyRecipes
+                ? 'Create your first recipe!'
+                : _searchQuery.isNotEmpty
                 ? 'Try adjusting your search'
-                : 'Add your first recipe!',
+                : 'No recipes available',
             style: TextStyle(
               fontSize: ResponsiveController.fontSize(14),
               color: Colors.grey.shade500,
             ),
           ),
+          if (_showOnlyMyRecipes) ...[
+            SizedBox(height: ResponsiveController.spacing(24)),
+            ElevatedButton.icon(
+              onPressed: () => _navigateToRecipeForm(),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Your First Recipe'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryColor,
+                padding: EdgeInsets.symmetric(
+                  horizontal: ResponsiveController.spacing(24),
+                  vertical: ResponsiveController.spacing(12),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -1,7 +1,8 @@
-// screens/recipes/recipe_detail_screen.dart
+// screens/recipe/recipe_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:recipe_app/screens/recipe/recipe_type.dart';
 import '../../services/recipe_service.dart';
+import '../../services/auth_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/responsive_controller.dart';
 import 'recipe_form_screen.dart';
@@ -20,6 +21,7 @@ class RecipeDetailScreen extends StatefulWidget {
 
 class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   final RecipeService _recipeService = RecipeService();
+  final AuthService _authService = AuthService();
   Recipe? _recipe;
   bool _isLoading = true;
 
@@ -29,17 +31,42 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     _loadRecipe();
   }
 
-  void _loadRecipe() {
+  Future<void> _loadRecipe() async {
     setState(() => _isLoading = true);
-    final recipe = _recipeService.getRecipeById(widget.recipeId);
-    setState(() {
-      _recipe = recipe;
-      _isLoading = false;
-    });
+
+    try {
+      await _recipeService.initialize();
+      final recipe = _recipeService.getRecipeById(widget.recipeId);
+      setState(() {
+        _recipe = recipe;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading recipe: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _editRecipe() async {
     if (_recipe == null) return;
+
+    final user = _authService.currentUser;
+    if (user == null || _recipe!.createdBy != user.uid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You can only edit your own recipes'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     final result = await Navigator.push(
       context,
@@ -54,31 +81,61 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   }
 
   Future<void> _deleteRecipe() async {
+    if (_recipe == null) return;
+
+    final user = _authService.currentUser;
+    if (user == null || _recipe!.createdBy != user.uid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You can only delete your own recipes'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Delete Recipe'),
-        content: Text('Are you sure you want to delete this recipe?'),
+        title: const Text('Delete Recipe'),
+        content: Text('Are you sure you want to delete "${_recipe!.name}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel'),
+            child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(
               foregroundColor: AppColors.errorColor,
             ),
-            child: Text('Delete'),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
 
     if (confirmed == true) {
-      _recipeService.deleteRecipe(widget.recipeId);
-      if (mounted) {
-        Navigator.pop(context, true);
+      try {
+        await _recipeService.deleteRecipe(widget.recipeId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Recipe deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context, true);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting recipe: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
@@ -90,7 +147,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         if (_isLoading) {
           return Scaffold(
             appBar: AppBar(),
-            body: Center(child: CircularProgressIndicator()),
+            body: const Center(child: CircularProgressIndicator()),
           );
         }
 
@@ -98,25 +155,47 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           return Scaffold(
             appBar: AppBar(),
             body: Center(
-              child: ResponsiveText(
-                'Recipe not found',
-                baseSize: 18,
-                color: Colors.grey.shade600,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.restaurant_menu,
+                    size: 80,
+                    color: Colors.grey.shade400,
+                  ),
+                  ResponsiveSpacing(height: 16),
+                  ResponsiveText(
+                    'Recipe not found',
+                    baseSize: 18,
+                    color: Colors.grey.shade600,
+                  ),
+                  ResponsiveSpacing(height: 8),
+                  ResponsiveText(
+                    'This recipe may have been deleted or moved',
+                    baseSize: 14,
+                    color: Colors.grey.shade500,
+                  ),
+                ],
               ),
             ),
           );
         }
 
+        final user = _authService.currentUser;
+        final isOwner = user != null && _recipe!.createdBy == user.uid;
+
         return Scaffold(
           body: CustomScrollView(
             slivers: [
-              _buildSliverAppBar(),
+              _buildSliverAppBar(isOwner),
               SliverToBoxAdapter(
                 child: Padding(
                   padding: ResponsiveController.padding(all: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _buildCreatorInfo(),
+                      ResponsiveSpacing(height: 16),
                       _buildRecipeInfo(),
                       ResponsiveSpacing(height: 24),
                       _buildDescription(),
@@ -131,13 +210,13 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               ),
             ],
           ),
-          floatingActionButton: _buildFloatingActionButtons(),
+          floatingActionButton: isOwner ? _buildFloatingActionButtons() : null,
         );
       },
     );
   }
 
-  Widget _buildSliverAppBar() {
+  Widget _buildSliverAppBar(bool isOwner) {
     return SliverAppBar(
       expandedHeight: 250,
       pinned: true,
@@ -148,7 +227,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
             fontSize: ResponsiveController.fontSize(18),
             fontWeight: FontWeight.bold,
             shadows: [
-              Shadow(
+              const Shadow(
                 color: Colors.black54,
                 blurRadius: 4,
               ),
@@ -184,19 +263,109 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                 ),
               ),
             ),
+            if (isOwner)
+              Positioned(
+                top: 100,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryColor,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Text(
+                    'Your Recipe',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
       actions: [
-        IconButton(
-          icon: Icon(Icons.edit),
-          onPressed: _editRecipe,
-        ),
-        IconButton(
-          icon: Icon(Icons.delete),
-          onPressed: _deleteRecipe,
-        ),
+        if (isOwner) ...[
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: _editRecipe,
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete),
+            onPressed: _deleteRecipe,
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _buildCreatorInfo() {
+    return Card(
+      elevation: 1,
+      color: Colors.blue.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(
+          ResponsiveController.borderRadius(8),
+        ),
+      ),
+      child: Padding(
+        padding: ResponsiveController.padding(all: 16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: ResponsiveController.iconSize(20),
+              backgroundColor: AppColors.primaryColor,
+              child: Icon(
+                Icons.person,
+                size: ResponsiveController.iconSize(20),
+                color: Colors.white,
+              ),
+            ),
+            ResponsiveSpacing(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ResponsiveText(
+                    'Recipe by ${_recipe!.createdByName}',
+                    baseSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  ResponsiveText(
+                    'Created ${_recipe!.formattedCreatedDate}',
+                    baseSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ],
+              ),
+            ),
+            if (_recipe!.updatedAt != _recipe!.createdAt)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Updated',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -232,7 +401,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                 ),
               ],
             ),
-            Divider(height: 24),
+            const Divider(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -265,10 +434,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       children: [
         Icon(
           icon,
-          size: 24,
+          size: ResponsiveController.iconSize(24),
           color: color ?? AppColors.primaryColor,
         ),
-        SizedBox(height: 4),
+        ResponsiveSpacing(height: 4),
         Text(
           label,
           style: TextStyle(
@@ -276,7 +445,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
             color: Colors.grey.shade600,
           ),
         ),
-        SizedBox(height: 2),
+        ResponsiveSpacing(height: 2),
         Text(
           value,
           style: TextStyle(
@@ -298,12 +467,23 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           fontWeight: FontWeight.bold,
         ),
         ResponsiveSpacing(height: 8),
-        Text(
-          _recipe!.description,
-          style: TextStyle(
-            fontSize: ResponsiveController.fontSize(14),
-            color: Colors.grey.shade700,
-            height: 1.5,
+        Card(
+          elevation: 1,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(
+              ResponsiveController.borderRadius(8),
+            ),
+          ),
+          child: Padding(
+            padding: ResponsiveController.padding(all: 16),
+            child: Text(
+              _recipe!.description,
+              style: TextStyle(
+                fontSize: ResponsiveController.fontSize(14),
+                color: Colors.grey.shade700,
+                height: 1.5,
+              ),
+            ),
           ),
         ),
       ],
@@ -317,9 +497,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         Row(
           children: [
             Icon(Icons.shopping_cart, color: AppColors.primaryColor),
-            SizedBox(width: 8),
+            ResponsiveSpacing(width: 8),
             ResponsiveText(
-              'Ingredients',
+              'Ingredients (${_recipe!.ingredients.length})',
               baseSize: 18,
               fontWeight: FontWeight.bold,
             ),
@@ -335,9 +515,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           ),
           child: ListView.separated(
             shrinkWrap: true,
-            physics: NeverScrollableScrollPhysics(),
+            physics: const NeverScrollableScrollPhysics(),
             itemCount: _recipe!.ingredients.length,
-            separatorBuilder: (context, index) => Divider(height: 1),
+            separatorBuilder: (context, index) => const Divider(height: 1),
             itemBuilder: (context, index) {
               return ListTile(
                 leading: Container(
@@ -383,9 +563,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         Row(
           children: [
             Icon(Icons.format_list_numbered, color: AppColors.primaryColor),
-            SizedBox(width: 8),
+            ResponsiveSpacing(width: 8),
             ResponsiveText(
-              'Instructions',
+              'Instructions (${_recipe!.steps.length} steps)',
               baseSize: 18,
               fontWeight: FontWeight.bold,
             ),
@@ -394,7 +574,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         ResponsiveSpacing(height: 12),
         ...List.generate(_recipe!.steps.length, (index) {
           return Padding(
-            padding: EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.only(bottom: 16),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -416,7 +596,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                     ),
                   ),
                 ),
-                SizedBox(width: 12),
+                ResponsiveSpacing(width: 12),
                 Expanded(
                   child: Container(
                     padding: ResponsiveController.padding(all: 12),
@@ -454,14 +634,14 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           heroTag: 'edit',
           onPressed: _editRecipe,
           backgroundColor: AppColors.primaryColor,
-          child: Icon(Icons.edit),
+          child: const Icon(Icons.edit),
         ),
-        SizedBox(height: 12),
+        ResponsiveSpacing(height: 12),
         FloatingActionButton(
           heroTag: 'delete',
           onPressed: _deleteRecipe,
           backgroundColor: AppColors.errorColor,
-          child: Icon(Icons.delete),
+          child: const Icon(Icons.delete),
         ),
       ],
     );

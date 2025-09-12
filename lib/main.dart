@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:recipe_app/screens/home/home_screen.dart';
+import 'package:recipe_app/screens/home/navigation_components.dart';
 import 'package:recipe_app/utils/responsive_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/auth/login_screen.dart';
-
 import 'services/auth_service.dart';
 import 'utils/constants.dart';
 
@@ -21,20 +20,44 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Auth App',
+      title: 'Recipe Manager',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,
         primaryColor: AppColors.primaryColor,
         scaffoldBackgroundColor: Colors.white,
-        appBarTheme: const AppBarTheme(
+        appBarTheme: AppBarTheme(
           elevation: 0,
-          backgroundColor: Colors.white,
-          iconTheme: IconThemeData(color: Colors.black),
-          titleTextStyle: TextStyle(
-            color: Colors.black,
+          backgroundColor: AppColors.primaryColor,
+          iconTheme: const IconThemeData(color: Colors.white),
+          titleTextStyle: const TextStyle(
+            color: Colors.white,
             fontSize: 20,
             fontWeight: FontWeight.bold,
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primaryColor,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: AppColors.primaryColor),
+          ),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
       ),
@@ -71,9 +94,9 @@ class _SplashScreenState extends State<SplashScreen> {
     final user = _authService.currentUser;
 
     if (user != null) {
-      // User is logged in
+      // User is logged in - go to main app with navigation
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const MainNavigationWrapper()),
       );
     } else if (!hasSeenOnboarding) {
       // First time user - show onboarding
@@ -93,24 +116,64 @@ class _SplashScreenState extends State<SplashScreen> {
     return ResponsiveBuilder(
       builder: (context, deviceType, orientation) {
         return Scaffold(
+          backgroundColor: AppColors.primaryColor,
           body: Center(
             child: ResponsiveContainer(
               padding: ResponsiveController.padding(all: 20),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  ResponsiveIcon(
-                    Icons.lock_outline,
-                    baseSize: 100,
-                    color: AppColors.primaryColor,
+                  // App Logo/Icon
+                  Container(
+                    width: ResponsiveController.iconSize(120),
+                    height: ResponsiveController.iconSize(120),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(
+                        ResponsiveController.borderRadius(20),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      Icons.restaurant_menu,
+                      size: ResponsiveController.iconSize(60),
+                      color: AppColors.primaryColor,
+                    ),
                   ),
-                  ResponsiveSpacing(height: 20),
-                  const CircularProgressIndicator(),
+                  ResponsiveSpacing(height: 30),
+                  ResponsiveText(
+                    'Recipe Manager',
+                    baseSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  ResponsiveSpacing(height: 8),
+                  ResponsiveText(
+                    'Your personal recipe collection',
+                    baseSize: 16,
+                    color: Colors.white.withOpacity(0.8),
+                  ),
+                  ResponsiveSpacing(height: 40),
+                  // Loading indicator
+                  SizedBox(
+                    width: ResponsiveController.iconSize(40),
+                    height: ResponsiveController.iconSize(40),
+                    child: const CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      strokeWidth: 3,
+                    ),
+                  ),
                   ResponsiveSpacing(height: 20),
                   ResponsiveText(
                     'Loading...',
                     baseSize: 16,
-                    color: Colors.grey[600],
+                    color: Colors.white.withOpacity(0.8),
                   ),
                 ],
               ),

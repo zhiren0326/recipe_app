@@ -3,7 +3,7 @@ import '../../services/auth_service.dart';
 import '../../utils/responsive_controller.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../utils/constants.dart';
-import '../home/home_screen.dart';
+import '../home/navigation_components.dart'; // Import the navigation wrapper
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
@@ -59,8 +59,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             );
 
+            // Navigate to MainNavigationWrapper instead of HomeScreen
             Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const HomeScreen()),
+              MaterialPageRoute(
+                builder: (_) => const MainNavigationWrapper(initialIndex: 0),
+              ),
                   (route) => false,
             );
           }
@@ -93,8 +96,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final user = await _authService.signInWithGoogle();
 
       if (user != null && mounted) {
+        // Navigate to MainNavigationWrapper instead of HomeScreen
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => const MainNavigationWrapper(initialIndex: 0),
+          ),
               (route) => false,
         );
       }
