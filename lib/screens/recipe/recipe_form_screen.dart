@@ -23,11 +23,16 @@ class RecipeFormScreen extends StatefulWidget {
   State<RecipeFormScreen> createState() => _RecipeFormScreenState();
 }
 
-class _RecipeFormScreenState extends State<RecipeFormScreen> {
+class _RecipeFormScreenState extends State<RecipeFormScreen> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final RecipeService _recipeService = RecipeService();
   final AuthService _authService = AuthService();
   final ImagePicker _imagePicker = ImagePicker();
+
+  // Animation Controllers
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late AnimationController _fabAnimationController;
 
   // Form Controllers
   late TextEditingController _nameController;
@@ -58,8 +63,31 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
     _initializeControllers();
     _loadRecipeTypes();
+  }
+
+  void _initializeAnimations() {
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeIn,
+    ));
+
+    _fabAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+
+    _animationController.forward();
+    _fabAnimationController.forward();
   }
 
   void _initializeControllers() {
@@ -77,22 +105,18 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
       _selectedDifficulty = recipe.difficulty;
       _rating = recipe.rating;
 
-      // Load existing base64 image if it's not a URL
       if (recipe.imageUrl != null && recipe.imageUrl!.startsWith('data:image')) {
         _base64Image = recipe.imageUrl;
       }
 
-      // Initialize ingredient controllers
       for (String ingredient in recipe.ingredients) {
         _ingredientControllers.add(TextEditingController(text: ingredient));
       }
 
-      // Initialize step controllers
       for (String step in recipe.steps) {
         _stepControllers.add(TextEditingController(text: step));
       }
     } else {
-      // Add one empty field for new recipe
       _ingredientControllers.add(TextEditingController());
       _stepControllers.add(TextEditingController());
     }
@@ -116,16 +140,13 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
     }
   }
 
-  // Convert image to base64
   Future<String?> _convertImageToBase64(File imageFile) async {
     try {
       setState(() => _isProcessingImage = true);
 
-      // Read image bytes
       final bytes = await imageFile.readAsBytes();
-
-      // Check file size (warn if over 500KB since Firestore docs have 1MB limit)
       final sizeInKB = bytes.length / 1024;
+
       if (sizeInKB > 500) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -137,10 +158,7 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
         }
       }
 
-      // Convert to base64
       final base64String = base64Encode(bytes);
-
-      // Create data URL with proper MIME type
       final extension = imageFile.path.split('.').last.toLowerCase();
       final mimeType = extension == 'png' ? 'png' : 'jpeg';
       final dataUrl = 'data:image/$mimeType;base64,$base64String';
@@ -162,14 +180,13 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
     }
   }
 
-  // Image selection methods
   Future<void> _pickImage(ImageSource source) async {
     try {
       final XFile? pickedFile = await _imagePicker.pickImage(
         source: source,
-        maxWidth: 800,  // Reduced from 1200 for smaller file size
-        maxHeight: 800, // Reduced from 1200 for smaller file size
-        imageQuality: 70, // Reduced from 85 for smaller file size
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 70,
       );
 
       if (pickedFile != null) {
@@ -178,7 +195,6 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
           _selectedImage = file;
         });
 
-        // Convert to base64 immediately
         await _convertImageToBase64(file);
       }
     } catch (e) {
@@ -193,236 +209,121 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
   void _showImageSourceDialog() {
     showModalBottomSheet(
       context: context,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(ResponsiveController.borderRadius(20)),
-        ),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
         return Container(
-          padding: ResponsiveController.padding(all: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ResponsiveText(
-                'Select Image Source',
-                baseSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-              ResponsiveSpacing(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildImageSourceOption(
-                    icon: Icons.camera_alt,
-                    label: 'Camera',
-                    onTap: () {
-                      Navigator.pop(context);
-                      _pickImage(ImageSource.camera);
-                    },
+          margin: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 60,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  _buildImageSourceOption(
-                    icon: Icons.photo_library,
-                    label: 'Gallery',
-                    onTap: () {
-                      Navigator.pop(context);
-                      _pickImage(ImageSource.gallery);
-                    },
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Add Recipe Photo',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
                   ),
-                  if (_selectedImage != null || _base64Image != null)
-                    _buildImageSourceOption(
-                      icon: Icons.delete,
-                      label: 'Remove',
-                      color: AppColors.errorColor,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildImageOption(
+                      icon: Icons.camera_alt_rounded,
+                      label: 'Camera',
+                      color: const Color(0xFF6C63FF),
                       onTap: () {
                         Navigator.pop(context);
-                        setState(() {
-                          _selectedImage = null;
-                          _base64Image = null;
-                        });
+                        _pickImage(ImageSource.camera);
                       },
                     ),
-                ],
-              ),
-              ResponsiveSpacing(height: 10),
-            ],
+                    _buildImageOption(
+                      icon: Icons.photo_library_rounded,
+                      label: 'Gallery',
+                      color: const Color(0xFF4ECDC4),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _pickImage(ImageSource.gallery);
+                      },
+                    ),
+                    if (_selectedImage != null || _base64Image != null)
+                      _buildImageOption(
+                        icon: Icons.delete_rounded,
+                        label: 'Remove',
+                        color: Colors.red,
+                        onTap: () {
+                          Navigator.pop(context);
+                          setState(() {
+                            _selectedImage = null;
+                            _base64Image = null;
+                          });
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildImageSourceOption({
+  Widget _buildImageOption({
     required IconData icon,
     required String label,
+    required Color color,
     required VoidCallback onTap,
-    Color? color,
   }) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(ResponsiveController.borderRadius(12)),
-      child: Container(
-        padding: ResponsiveController.padding(all: 16),
-        child: Column(
-          children: [
-            Icon(
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
               icon,
-              size: ResponsiveController.iconSize(32),
-              color: color ?? AppColors.primaryColor,
+              size: 32,
+              color: color,
             ),
-            ResponsiveSpacing(height: 8),
-            ResponsiveText(
-              label,
-              baseSize: 14,
-              color: color ?? Colors.black87,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: color,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
-
-  Widget _buildImageSection() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(
-          ResponsiveController.borderRadius(12),
-        ),
-      ),
-      child: Padding(
-        padding: ResponsiveController.padding(all: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ResponsiveText(
-              'Recipe Image',
-              baseSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-            ResponsiveSpacing(height: 16),
-            InkWell(
-              onTap: _showImageSourceDialog,
-              borderRadius: BorderRadius.circular(ResponsiveController.borderRadius(12)),
-              child: Container(
-                height: ResponsiveController.height(25),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveController.borderRadius(12),
-                  ),
-                  border: Border.all(
-                    color: Colors.grey[300]!,
-                    width: 2,
-                  ),
-                ),
-                child: _isProcessingImage
-                    ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(
-                        color: AppColors.primaryColor,
-                      ),
-                      ResponsiveSpacing(height: 8),
-                      ResponsiveText(
-                        'Processing image...',
-                        baseSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                    ],
-                  ),
-                )
-                    : _base64Image != null
-                    ? ClipRRect(
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveController.borderRadius(10),
-                  ),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.memory(
-                        base64Decode(_base64Image!.split(',').last),
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return _buildPlaceholderImage();
-                        },
-                      ),
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: IconButton(
-                            icon: Icon(
-                              Icons.edit,
-                              color: Colors.white,
-                              size: ResponsiveController.iconSize(20),
-                            ),
-                            onPressed: _showImageSourceDialog,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-                    : _buildPlaceholderImage(),
-              ),
-            ),
-            ResponsiveSpacing(height: 12),
-            Row(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  size: ResponsiveController.iconSize(16),
-                  color: Colors.grey[600],
-                ),
-                ResponsiveSpacing(width: 8),
-                Expanded(
-                  child: ResponsiveText(
-                    'Tap to add or change image (max 800x800px)',
-                    baseSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlaceholderImage() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(
-          Icons.add_a_photo,
-          size: ResponsiveController.iconSize(48),
-          color: Colors.grey[400],
-        ),
-        ResponsiveSpacing(height: 12),
-        ResponsiveText(
-          'Add Recipe Image',
-          baseSize: 16,
-          color: Colors.grey[600],
-        ),
-        ResponsiveSpacing(height: 4),
-        ResponsiveText(
-          'Take a photo or select from gallery',
-          baseSize: 12,
-          color: Colors.grey[500],
-        ),
-      ],
     );
   }
 
   @override
   void dispose() {
+    _animationController.dispose();
+    _fabAnimationController.dispose();
     _nameController.dispose();
     _descriptionController.dispose();
     _prepTimeController.dispose();
@@ -486,7 +387,6 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
     setState(() => _isSaving = true);
 
     try {
-      // Get non-empty ingredients and steps
       final ingredients = _ingredientControllers
           .map((c) => c.text.trim())
           .where((text) => text.isNotEmpty)
@@ -505,7 +405,6 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
         return;
       }
 
-      // Use base64 image if available, otherwise use default
       String imageUrl = _base64Image ??
           (widget.recipe?.imageUrl ??
               'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500');
@@ -576,49 +475,75 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
     return ResponsiveBuilder(
       builder: (context, deviceType, orientation) {
         return Scaffold(
-          appBar: AppBar(
-            title: ResponsiveText(
-              widget.recipe != null ? 'Edit Recipe' : 'New Recipe',
-              baseSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-            actions: [
-              if (!_isSaving)
-                TextButton.icon(
-                  onPressed: _saveRecipe,
-                  icon: const Icon(Icons.save, color: Colors.white),
-                  label: const Text(
-                    'Save',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-            ],
-          ),
+          backgroundColor: const Color(0xFFF8F9FA),
+          appBar: _buildAppBar(),
           body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              padding: ResponsiveController.padding(all: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // User Info Display
-                  _buildUserInfoCard(),
-                  ResponsiveSpacing(height: 24),
-                  _buildBasicInfoSection(),
-                  ResponsiveSpacing(height: 24),
-                  _buildImageSection(), // Image section
-                  ResponsiveSpacing(height: 24),
-                  _buildRecipeDetailsSection(),
-                  ResponsiveSpacing(height: 24),
-                  _buildIngredientsSection(),
-                  ResponsiveSpacing(height: 24),
-                  _buildStepsSection(),
-                  ResponsiveSpacing(height: 32),
-                  _buildSaveButton(),
-                  ResponsiveSpacing(height: 32),
-                ],
+              ? Center(
+            child: CircularProgressIndicator(
+              color: AppColors.primaryColor,
+            ),
+          )
+              : FadeTransition(
+            opacity: _fadeAnimation,
+            child: Form(
+              key: _formKey,
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  children: [
+                    _buildHeroSection(),
+                    Padding(
+                      padding: ResponsiveController.padding(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ResponsiveSpacing(height: 30),
+                          _buildImageSection(),
+                          ResponsiveSpacing(height: 24),
+                          _buildBasicInfoSection(),
+                          ResponsiveSpacing(height: 24),
+                          _buildRecipeDetailsSection(),
+                          ResponsiveSpacing(height: 24),
+                          _buildIngredientsSection(),
+                          ResponsiveSpacing(height: 24),
+                          _buildStepsSection(),
+                          ResponsiveSpacing(height: 32),
+                          _buildSaveButton(),
+                          ResponsiveSpacing(height: 40),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          floatingActionButton: ScaleTransition(
+            scale: _fabAnimationController,
+            child: FloatingActionButton.extended(
+              onPressed: _isSaving ? null : _saveRecipe,
+              backgroundColor: AppColors.primaryColor,
+              icon: _isSaving
+                  ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+                  : const Icon(Icons.save_rounded, color: Colors.white),
+              label: Text(
+                _isSaving
+                    ? 'Saving...'
+                    : (widget.recipe != null ? 'Update' : 'Create'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
               ),
             ),
           ),
@@ -627,44 +552,114 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
     );
   }
 
-  Widget _buildUserInfoCard() {
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              widget.recipe != null ? Icons.edit_rounded : Icons.add_rounded,
+              color: AppColors.primaryColor,
+              size: ResponsiveController.iconSize(24),
+            ),
+          ),
+          ResponsiveSpacing(width: 12),
+          ResponsiveText(
+            widget.recipe != null ? 'Edit Recipe' : 'New Recipe',
+            baseSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeroSection() {
     final user = _authService.currentUser;
 
-    return Card(
-      elevation: 1,
-      color: AppColors.primaryColor.withOpacity(0.1),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(
-          ResponsiveController.borderRadius(8),
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primaryColor.withOpacity(0.1),
+            AppColors.primaryColor.withOpacity(0.05),
+          ],
         ),
       ),
       child: Padding(
-        padding: ResponsiveController.padding(all: 16),
-        child: Row(
+        padding: ResponsiveController.padding(all: 30),
+        child: Column(
           children: [
-            CircleAvatar(
-              radius: ResponsiveController.iconSize(20),
-              backgroundColor: AppColors.primaryColor,
-              child: Icon(
-                Icons.person,
-                size: ResponsiveController.iconSize(20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
                 color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryColor.withOpacity(0.2),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Icon(
+                widget.recipe != null ? Icons.edit_document : Icons.restaurant_menu_rounded,
+                size: 40,
+                color: AppColors.primaryColor,
               ),
             ),
-            ResponsiveSpacing(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ResponsiveText(
-                    'Recipe by: ${user?.displayName ?? user?.email ?? 'Unknown User'}',
-                    baseSize: 14,
-                    fontWeight: FontWeight.bold,
+            ResponsiveSpacing(height: 20),
+            ResponsiveText(
+              widget.recipe != null ? 'Editing Recipe' : 'Creating New Recipe',
+              baseSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+            ResponsiveSpacing(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
                   ),
-                  ResponsiveText(
-                    widget.recipe != null ? 'Editing existing recipe' : 'Creating new recipe',
-                    baseSize: 12,
-                    color: Colors.grey[600],
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 12,
+                    backgroundColor: AppColors.primaryColor.withOpacity(0.2),
+                    child: Icon(
+                      Icons.person,
+                      size: 14,
+                      color: AppColors.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'By ${user?.displayName ?? user?.email ?? 'Unknown User'}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.black54,
+                    ),
                   ),
                 ],
               ),
@@ -675,36 +670,204 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
     );
   }
 
-  Widget _buildBasicInfoSection() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(
-          ResponsiveController.borderRadius(12),
-        ),
+  Widget _buildImageSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Padding(
-        padding: ResponsiveController.padding(all: 16),
+        padding: ResponsiveController.padding(all: 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ResponsiveText(
-              'Basic Information',
-              baseSize: 18,
-              fontWeight: FontWeight.bold,
+            Row(
+              children: [
+                Icon(
+                  Icons.image_rounded,
+                  color: AppColors.primaryColor,
+                  size: ResponsiveController.iconSize(20),
+                ),
+                ResponsiveSpacing(width: 8),
+                ResponsiveText(
+                  '📸 Recipe Photo',
+                  baseSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ],
             ),
-            ResponsiveSpacing(height: 16),
-            TextFormField(
-              controller: _nameController,
-              decoration: InputDecoration(
-                labelText: 'Recipe Name *',
-                prefixIcon: const Icon(Icons.restaurant_menu),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveController.borderRadius(8),
+            ResponsiveSpacing(height: 20),
+            InkWell(
+              onTap: _showImageSourceDialog,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                height: ResponsiveController.height(25),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.grey[100]!,
+                      Colors.grey[50]!,
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppColors.primaryColor.withOpacity(0.2),
+                    width: 2,
                   ),
                 ),
+                child: _isProcessingImage
+                    ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        color: AppColors.primaryColor,
+                      ),
+                      ResponsiveSpacing(height: 12),
+                      ResponsiveText(
+                        'Processing image...',
+                        baseSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ],
+                  ),
+                )
+                    : _base64Image != null
+                    ? ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.memory(
+                        base64Decode(_base64Image!.split(',').last),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return _buildPlaceholderImage();
+                        },
+                      ),
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(
+                              Icons.edit_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            onPressed: _showImageSourceDialog,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+                    : _buildPlaceholderImage(),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaceholderImage() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primaryColor.withOpacity(0.05),
+            AppColors.primaryColor.withOpacity(0.1),
+          ],
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.primaryColor.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.add_a_photo_rounded,
+              size: 40,
+              color: AppColors.primaryColor,
+            ),
+          ),
+          ResponsiveSpacing(height: 16),
+          ResponsiveText(
+            'Tap to Add Photo',
+            baseSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppColors.primaryColor,
+          ),
+          ResponsiveSpacing(height: 4),
+          ResponsiveText(
+            'Camera or Gallery',
+            baseSize: 12,
+            color: Colors.grey[600],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBasicInfoSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: ResponsiveController.padding(all: 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  color: const Color(0xFF6C63FF),
+                  size: ResponsiveController.iconSize(20),
+                ),
+                ResponsiveSpacing(width: 8),
+                ResponsiveText(
+                  '📝 Basic Information',
+                  baseSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ],
+            ),
+            ResponsiveSpacing(height: 20),
+            _buildModernTextField(
+              controller: _nameController,
+              label: 'Recipe Name',
+              icon: Icons.restaurant_menu,
+              color: const Color(0xFF6C63FF),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Please enter recipe name';
@@ -713,44 +876,13 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
               },
             ),
             ResponsiveSpacing(height: 16),
-            DropdownButtonFormField<String>(
-              value: _selectedTypeId,
-              decoration: InputDecoration(
-                labelText: 'Recipe Type *',
-                prefixIcon: const Icon(Icons.category),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveController.borderRadius(8),
-                  ),
-                ),
-              ),
-              items: _recipeTypes.map((type) {
-                return DropdownMenuItem(
-                  value: type.id,
-                  child: Text(type.name),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedTypeId = value;
-                  _selectedTypeName = _recipeTypes
-                      .firstWhere((t) => t.id == value)
-                      .name;
-                });
-              },
-            ),
+            _buildModernDropdown(),
             ResponsiveSpacing(height: 16),
-            TextFormField(
+            _buildModernTextField(
               controller: _descriptionController,
-              decoration: InputDecoration(
-                labelText: 'Description *',
-                prefixIcon: const Icon(Icons.description),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    ResponsiveController.borderRadius(8),
-                  ),
-                ),
-              ),
+              label: 'Description',
+              icon: Icons.description_rounded,
+              color: const Color(0xFFFF6B6B),
               maxLines: 3,
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
@@ -765,56 +897,167 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
     );
   }
 
-  Widget _buildRecipeDetailsSection() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(
-          ResponsiveController.borderRadius(12),
+  Widget _buildModernTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    required Color color,
+    int maxLines = 1,
+    String? Function(String?)? validator,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+  }) {
+    return TextFormField(
+      controller: controller,
+      maxLines: maxLines,
+      validator: validator,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      style: const TextStyle(fontSize: 16),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: Colors.grey[600]),
+        prefixIcon: Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: color,
+          ),
+        ),
+        filled: true,
+        fillColor: Colors.grey[50],
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: color,
+            width: 2,
+          ),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(
+            color: Colors.red,
+            width: 1,
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildModernDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _selectedTypeId,
+      decoration: InputDecoration(
+        labelText: 'Recipe Type',
+        labelStyle: TextStyle(color: Colors.grey[600]),
+        prefixIcon: Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF4ECDC4).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.category_rounded,
+            size: 20,
+            color: Color(0xFF4ECDC4),
+          ),
+        ),
+        filled: true,
+        fillColor: Colors.grey[50],
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(
+            color: Color(0xFF4ECDC4),
+            width: 2,
+          ),
+        ),
+      ),
+      items: _recipeTypes.map((type) {
+        return DropdownMenuItem(
+          value: type.id,
+          child: Text(type.name),
+        );
+      }).toList(),
+      onChanged: (value) {
+        setState(() {
+          _selectedTypeId = value;
+          _selectedTypeName = _recipeTypes
+              .firstWhere((t) => t.id == value)
+              .name;
+        });
+      },
+    );
+  }
+
+  Widget _buildRecipeDetailsSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: ResponsiveController.padding(all: 16),
+        padding: ResponsiveController.padding(all: 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ResponsiveText(
-              'Recipe Details',
-              baseSize: 18,
-              fontWeight: FontWeight.bold,
+            Row(
+              children: [
+                Icon(
+                  Icons.settings_rounded,
+                  color: const Color(0xFFFFD93D),
+                  size: ResponsiveController.iconSize(20),
+                ),
+                ResponsiveSpacing(width: 8),
+                ResponsiveText(
+                  '⚙️ Recipe Details',
+                  baseSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ],
             ),
-            ResponsiveSpacing(height: 16),
+            ResponsiveSpacing(height: 20),
             Row(
               children: [
                 Expanded(
-                  child: TextFormField(
+                  child: _buildModernTextField(
                     controller: _prepTimeController,
-                    decoration: InputDecoration(
-                      labelText: 'Prep Time (min)',
-                      prefixIcon: const Icon(Icons.timer),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveController.borderRadius(8),
-                        ),
-                      ),
-                    ),
+                    label: 'Prep (min)',
+                    icon: Icons.timer_rounded,
+                    color: const Color(0xFF6C63FF),
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: TextFormField(
+                  child: _buildModernTextField(
                     controller: _cookTimeController,
-                    decoration: InputDecoration(
-                      labelText: 'Cook Time (min)',
-                      prefixIcon: const Icon(Icons.local_fire_department),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveController.borderRadius(8),
-                        ),
-                      ),
-                    ),
+                    label: 'Cook (min)',
+                    icon: Icons.local_fire_department_rounded,
+                    color: const Color(0xFFFF6B6B),
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   ),
@@ -825,173 +1068,198 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
             Row(
               children: [
                 Expanded(
-                  child: TextFormField(
+                  child: _buildModernTextField(
                     controller: _servingsController,
-                    decoration: InputDecoration(
-                      labelText: 'Servings',
-                      prefixIcon: const Icon(Icons.people),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveController.borderRadius(8),
-                        ),
-                      ),
-                    ),
+                    label: 'Servings',
+                    icon: Icons.people_rounded,
+                    color: const Color(0xFF4ECDC4),
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _selectedDifficulty,
-                    isDense: true,
-                    decoration: InputDecoration(
-                      labelText: 'Difficulty',
-                      prefixIcon: const Icon(Icons.speed),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(
-                          ResponsiveController.borderRadius(8),
-                        ),
-                      ),
-                    ),
-                    items: ['Easy', 'Medium', 'Hard'].map((difficulty) {
-                      return DropdownMenuItem(
-                        value: difficulty,
-                        child: Text(
-                          difficulty,
-                          style: const TextStyle(fontSize: 12.5),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedDifficulty = value!;
-                      });
-                    },
-                  ),
+                  child: _buildDifficultySelector(),
                 ),
               ],
             ),
-            ResponsiveSpacing(height: 16),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.star, color: Colors.amber),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Rating: ${_rating.toStringAsFixed(1)}',
-                      style: TextStyle(
-                        fontSize: ResponsiveController.fontSize(14),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                Slider(
-                  value: _rating,
-                  min: 1.0,
-                  max: 5.0,
-                  divisions: 8,
-                  activeColor: Colors.amber,
-                  onChanged: (value) {
-                    setState(() {
-                      _rating = value;
-                    });
-                  },
-                ),
-              ],
-            ),
+            ResponsiveSpacing(height: 20),
+            _buildRatingSelector(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildIngredientsSection() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(
-          ResponsiveController.borderRadius(12),
+  Widget _buildDifficultySelector() {
+    final difficulties = ['Easy', 'Medium', 'Hard'];
+    final colors = {
+      'Easy': Colors.green,
+      'Medium': Colors.orange,
+      'Hard': Colors.red,
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Difficulty',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
         ),
+        const SizedBox(height: 8),
+        Row(
+          children: difficulties.map((diff) {
+            final isSelected = _selectedDifficulty == diff;
+            return Expanded(
+              child: GestureDetector(
+                onTap: () => setState(() => _selectedDifficulty = diff),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? colors[diff]!.withOpacity(0.1)
+                        : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected
+                          ? colors[diff]!
+                          : Colors.grey[300]!,
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      diff,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected ? colors[diff] : Colors.grey[600],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRatingSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.star_rounded,
+              color: Colors.amber,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Initial Rating: ${_rating.toStringAsFixed(1)}',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: Colors.amber,
+            inactiveTrackColor: Colors.amber.withOpacity(0.2),
+            thumbColor: Colors.amber,
+            overlayColor: Colors.amber.withOpacity(0.3),
+            trackHeight: 6,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+          ),
+          child: Slider(
+            value: _rating,
+            min: 1.0,
+            max: 5.0,
+            divisions: 8,
+            onChanged: (value) => setState(() => _rating = value),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIngredientsSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Padding(
-        padding: ResponsiveController.padding(all: 16),
+        padding: ResponsiveController.padding(all: 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                ResponsiveText(
-                  'Ingredients',
-                  baseSize: 18,
-                  fontWeight: FontWeight.bold,
+                Row(
+                  children: [
+                    Icon(
+                      Icons.shopping_cart_rounded,
+                      color: const Color(0xFF6C63FF),
+                      size: ResponsiveController.iconSize(20),
+                    ),
+                    ResponsiveSpacing(width: 8),
+                    ResponsiveText(
+                      '🥘 Ingredients',
+                      baseSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ],
                 ),
                 IconButton(
-                  icon: Icon(Icons.add_circle, color: AppColors.primaryColor),
                   onPressed: _addIngredient,
+                  icon: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6C63FF).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.add_rounded,
+                      color: Color(0xFF6C63FF),
+                      size: 20,
+                    ),
+                  ),
                 ),
               ],
             ),
-            ResponsiveSpacing(height: 8),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _ingredientControllers.length,
-              itemBuilder: (context, index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryColor.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Text(
-                            '${index + 1}',
-                            style: TextStyle(
-                              fontSize: ResponsiveController.fontSize(12),
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.primaryColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _ingredientControllers[index],
-                          decoration: InputDecoration(
-                            hintText: 'Enter ingredient',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveController.borderRadius(8),
-                              ),
-                            ),
-                            contentPadding: ResponsiveController.padding(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (_ingredientControllers.length > 1)
-                        IconButton(
-                          icon: Icon(Icons.remove_circle, color: AppColors.errorColor),
-                          onPressed: () => _removeIngredient(index),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
+            ResponsiveSpacing(height: 16),
+            ...List.generate(_ingredientControllers.length, (index) {
+              return _buildListItem(
+                controller: _ingredientControllers[index],
+                index: index,
+                hint: 'Enter ingredient',
+                color: const Color(0xFF6C63FF),
+                onRemove: _ingredientControllers.length > 1
+                    ? () => _removeIngredient(index)
+                    : null,
+              );
+            }),
           ],
         ),
       ),
@@ -999,104 +1267,186 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
   }
 
   Widget _buildStepsSection() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(
-          ResponsiveController.borderRadius(12),
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Padding(
-        padding: ResponsiveController.padding(all: 16),
+        padding: ResponsiveController.padding(all: 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                ResponsiveText(
-                  'Instructions',
-                  baseSize: 18,
-                  fontWeight: FontWeight.bold,
+                Row(
+                  children: [
+                    Icon(
+                      Icons.format_list_numbered_rounded,
+                      color: const Color(0xFF4ECDC4),
+                      size: ResponsiveController.iconSize(20),
+                    ),
+                    ResponsiveSpacing(width: 8),
+                    ResponsiveText(
+                      '📋 Instructions',
+                      baseSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ],
                 ),
                 IconButton(
-                  icon: Icon(Icons.add_circle, color: AppColors.primaryColor),
                   onPressed: _addStep,
+                  icon: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4ECDC4).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.add_rounded,
+                      color: Color(0xFF4ECDC4),
+                      size: 20,
+                    ),
+                  ),
                 ),
               ],
             ),
-            ResponsiveSpacing(height: 8),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _stepControllers.length,
-              itemBuilder: (context, index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryColor,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Text(
-                            '${index + 1}',
-                            style: TextStyle(
-                              fontSize: ResponsiveController.fontSize(12),
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _stepControllers[index],
-                          decoration: InputDecoration(
-                            hintText: 'Enter step',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(
-                                ResponsiveController.borderRadius(8),
-                              ),
-                            ),
-                            contentPadding: ResponsiveController.padding(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                          ),
-                          maxLines: 2,
-                        ),
-                      ),
-                      if (_stepControllers.length > 1)
-                        IconButton(
-                          icon: Icon(Icons.remove_circle, color: AppColors.errorColor),
-                          onPressed: () => _removeStep(index),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
+            ResponsiveSpacing(height: 16),
+            ...List.generate(_stepControllers.length, (index) {
+              return _buildListItem(
+                controller: _stepControllers[index],
+                index: index,
+                hint: 'Enter step',
+                color: const Color(0xFF4ECDC4),
+                maxLines: 2,
+                onRemove: _stepControllers.length > 1
+                    ? () => _removeStep(index)
+                    : null,
+              );
+            }),
           ],
         ),
       ),
     );
   }
 
+  Widget _buildListItem({
+    required TextEditingController controller,
+    required int index,
+    required String hint,
+    required Color color,
+    int maxLines = 1,
+    VoidCallback? onRemove,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  color,
+                  color.withOpacity(0.8),
+                ],
+              ),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                '${index + 1}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextFormField(
+              controller: controller,
+              maxLines: maxLines,
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: TextStyle(color: Colors.grey[400]),
+                filled: true,
+                fillColor: Colors.grey[50],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: color.withOpacity(0.5),
+                    width: 2,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ),
+          if (onRemove != null)
+            IconButton(
+              onPressed: onRemove,
+              icon: Icon(
+                Icons.remove_circle,
+                color: Colors.red.withOpacity(0.7),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSaveButton() {
-    return SizedBox(
+    return Container(
       width: double.infinity,
-      height: 50,
+      height: 56,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primaryColor,
+            AppColors.primaryColor.withOpacity(0.8),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryColor.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
       child: ElevatedButton.icon(
         onPressed: _isSaving ? null : _saveRecipe,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
         icon: _isSaving
-            ? SizedBox(
+            ? const SizedBox(
           width: 20,
           height: 20,
           child: CircularProgressIndicator(
@@ -1104,20 +1454,15 @@ class _RecipeFormScreenState extends State<RecipeFormScreen> {
             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
           ),
         )
-            : const Icon(Icons.save),
-        label: ResponsiveText(
+            : const Icon(Icons.save_rounded, color: Colors.white),
+        label: Text(
           _isSaving
               ? 'Saving...'
               : (widget.recipe != null ? 'Update Recipe' : 'Create Recipe'),
-          baseSize: 16,
-          fontWeight: FontWeight.bold,
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primaryColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(
-              ResponsiveController.borderRadius(8),
-            ),
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
           ),
         ),
       ),
