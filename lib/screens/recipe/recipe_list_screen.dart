@@ -1,4 +1,5 @@
 // screens/recipe/recipe_list_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:recipe_app/screens/recipe/recipe_detail_screen.dart';
 import 'package:recipe_app/screens/recipe/recipe_form_screen.dart';
@@ -26,6 +27,7 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
   String _searchQuery = '';
   bool _isLoading = true;
   bool _showOnlyMyRecipes = true;
+  bool _isSyncing = false;
 
   @override
   void initState() {
@@ -37,34 +39,81 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // Initialize recipe service
       await _recipeService.initialize();
-      await _recipeService.syncWithFirebase();
 
-      setState(() {
-        _recipeTypes = _recipeService.getRecipeTypes();
-        _loadRecipes();
-        _isLoading = false;
-      });
+      // Load recipe types
+      _recipeTypes = _recipeService.getRecipeTypes();
+
+      // Sync with Firebase
+      await _syncWithFirebase();
+
+      // Load recipes after sync
+      _loadRecipes();
+
+      setState(() => _isLoading = false);
     } catch (e) {
+      print('Error loading data: $e');
       setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error loading data: $e'),
             backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: _loadData,
+              textColor: Colors.white,
+            ),
           ),
         );
       }
     }
   }
 
-  void _loadRecipes() {
-    if (_showOnlyMyRecipes) {
-      _recipes = _recipeService.getUserRecipes();
-    } else {
-      _recipes = _recipeService.getAllRecipes();
+  Future<void> _syncWithFirebase() async {
+    setState(() => _isSyncing = true);
+
+    try {
+      print('Starting Firebase sync...');
+      await _recipeService.syncWithFirebase();
+      print('Firebase sync completed');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recipes synced successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error syncing with Firebase: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sync error: Working offline. ${e.toString()}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isSyncing = false);
     }
-    _filterRecipes();
+  }
+
+  void _loadRecipes() {
+    setState(() {
+      if (_showOnlyMyRecipes) {
+        _recipes = _recipeService.getUserRecipes();
+        print('Loaded ${_recipes.length} user recipes');
+      } else {
+        _recipes = _recipeService.getAllRecipes();
+        print('Loaded ${_recipes.length} total recipes');
+      }
+      _filterRecipes();
+    });
   }
 
   void _filterRecipes() {
@@ -80,6 +129,8 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
 
       // Sort by creation date (newest first)
       _filteredRecipes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      print('Filtered to ${_filteredRecipes.length} recipes');
     });
   }
 
@@ -106,6 +157,12 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
     });
   }
 
+  Future<void> _manualRefresh() async {
+    // Force refresh from Firebase
+    await _recipeService.refreshRecipes();
+    await _loadData();
+  }
+
   Future<void> _navigateToRecipeForm({Recipe? recipe}) async {
     final result = await Navigator.push(
       context,
@@ -114,7 +171,7 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
       ),
     );
     if (result == true) {
-      _loadData();
+      await _loadData();
     }
   }
 
@@ -126,7 +183,7 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
       ),
     );
     if (result == true) {
-      _loadData();
+      await _loadData();
     }
   }
 
@@ -166,7 +223,7 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
     if (confirmed == true) {
       try {
         await _recipeService.deleteRecipe(recipe.id);
-        _loadData();
+        await _loadData();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -188,6 +245,46 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
     }
   }
 
+  // Helper method to build image widget that handles both base64 and URLs
+  Widget _buildRecipeImage(String imageUrl, {BoxFit fit = BoxFit.cover}) {
+    if (imageUrl.startsWith('data:image')) {
+      // Base64 image
+      try {
+        final base64String = imageUrl.split(',').last;
+        final bytes = base64Decode(base64String);
+        return Image.memory(
+          bytes,
+          fit: fit,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildImagePlaceholder();
+          },
+        );
+      } catch (e) {
+        return _buildImagePlaceholder();
+      }
+    } else {
+      // Regular URL
+      return Image.network(
+        imageUrl,
+        fit: fit,
+        errorBuilder: (context, error, stackTrace) {
+          return _buildImagePlaceholder();
+        },
+      );
+    }
+  }
+
+  Widget _buildImagePlaceholder() {
+    return Container(
+      color: Colors.grey.shade200,
+      child: Icon(
+        Icons.restaurant,
+        size: 40,
+        color: Colors.grey.shade400,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ResponsiveBuilder(
@@ -202,6 +299,29 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
               ),
             ),
             actions: [
+              // Sync status indicator
+              if (_isSyncing)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
+                ),
+              // Refresh button
+              IconButton(
+                icon: Icon(
+                  Icons.refresh,
+                  size: ResponsiveController.iconSize(24),
+                ),
+                onPressed: _isSyncing ? null : _manualRefresh,
+                tooltip: 'Refresh from Firebase',
+              ),
+              // Toggle view button
               IconButton(
                 icon: Icon(
                   _showOnlyMyRecipes ? Icons.person : Icons.public,
@@ -210,12 +330,14 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
                 onPressed: _toggleRecipeView,
                 tooltip: _showOnlyMyRecipes ? 'Show All Recipes' : 'Show My Recipes',
               ),
+              // Add recipe button
               IconButton(
                 icon: Icon(
                   Icons.add,
                   size: ResponsiveController.iconSize(24),
                 ),
                 onPressed: () => _navigateToRecipeForm(),
+                tooltip: 'Add Recipe',
               ),
             ],
           ),
@@ -225,6 +347,11 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
             children: [
               _buildFilters(),
               _buildViewToggle(),
+              if (_isSyncing)
+                LinearProgressIndicator(
+                  backgroundColor: Colors.grey[200],
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
+                ),
               Expanded(
                 child: _filteredRecipes.isEmpty
                     ? _buildEmptyState()
@@ -338,10 +465,21 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
   }
 
   Widget _buildViewToggle() {
+    final user = _authService.currentUser;
+    final userInfo = user != null
+        ? ' (${user.displayName ?? user.email ?? "Unknown"})'
+        : '';
+
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: ResponsiveController.spacing(16),
         vertical: ResponsiveController.spacing(8),
+      ),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        border: Border(
+          bottom: BorderSide(color: Colors.grey[200]!),
+        ),
       ),
       child: Row(
         children: [
@@ -351,24 +489,44 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
             color: AppColors.primaryColor,
           ),
           SizedBox(width: ResponsiveController.spacing(8)),
-          Text(
-            _showOnlyMyRecipes
-                ? 'Showing your recipes (${_filteredRecipes.length})'
-                : 'Showing all recipes (${_filteredRecipes.length})',
-            style: TextStyle(
-              fontSize: ResponsiveController.fontSize(14),
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _showOnlyMyRecipes
+                      ? 'Your recipes$userInfo'
+                      : 'All community recipes',
+                  style: TextStyle(
+                    fontSize: ResponsiveController.fontSize(14),
+                    color: Colors.grey[800],
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '${_filteredRecipes.length} recipe${_filteredRecipes.length != 1 ? 's' : ''} found',
+                  style: TextStyle(
+                    fontSize: ResponsiveController.fontSize(12),
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
             ),
           ),
-          const Spacer(),
-          TextButton(
-            onPressed: _toggleRecipeView,
-            child: Text(
-              _showOnlyMyRecipes ? 'Show All' : 'Show Mine',
-              style: TextStyle(
-                fontSize: ResponsiveController.fontSize(12),
-                color: AppColors.primaryColor,
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: TextButton(
+              onPressed: _toggleRecipeView,
+              child: Text(
+                _showOnlyMyRecipes ? 'Show All' : 'Show Mine',
+                style: TextStyle(
+                  fontSize: ResponsiveController.fontSize(12),
+                  color: AppColors.primaryColor,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
@@ -382,7 +540,7 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
     ResponsiveController.init(context);
 
     return RefreshIndicator(
-      onRefresh: _loadData,
+      onRefresh: _manualRefresh,
       child: GridView.builder(
         padding: EdgeInsets.all(ResponsiveController.spacing(16)),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -403,6 +561,7 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
   Widget _buildRecipeCard(Recipe recipe) {
     final user = _authService.currentUser;
     final isOwner = user != null && recipe.createdBy == user.uid;
+    final hasFirebaseId = recipe.firebaseId != null && recipe.firebaseId!.isNotEmpty;
 
     return GestureDetector(
       onTap: () => _navigateToRecipeDetail(recipe),
@@ -426,20 +585,8 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      recipe.imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          color: Colors.grey.shade200,
-                          child: Icon(
-                            Icons.restaurant,
-                            size: 40,
-                            color: Colors.grey.shade400,
-                          ),
-                        );
-                      },
-                    ),
+                    // Use the helper method to display image
+                    _buildRecipeImage(recipe.imageUrl),
                     // Gradient Overlay
                     Positioned(
                       bottom: 0,
@@ -506,13 +653,26 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
                             color: AppColors.primaryColor,
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Text(
-                            'Mine',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Mine',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              if (hasFirebaseId) ...[
+                                const SizedBox(width: 4),
+                                const Icon(
+                                  Icons.cloud_done,
+                                  size: 10,
+                                  color: Colors.white,
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ),
@@ -580,15 +740,27 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      'by ${recipe.createdByName}',
-                      style: TextStyle(
-                        fontSize: ResponsiveController.fontSize(10),
-                        color: AppColors.primaryColor,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'by ${recipe.createdByName}',
+                            style: TextStyle(
+                              fontSize: ResponsiveController.fontSize(10),
+                              color: AppColors.primaryColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (!hasFirebaseId && isOwner)
+                          Icon(
+                            Icons.cloud_off,
+                            size: 12,
+                            color: Colors.orange,
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Expanded(
@@ -602,7 +774,6 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(height: 4),
                     Row(
                       children: [
                         Icon(Icons.timer, size: 12, color: Colors.grey),
@@ -664,7 +835,7 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
                 ? 'Create your first recipe!'
                 : _searchQuery.isNotEmpty
                 ? 'Try adjusting your search'
-                : 'No recipes available',
+                : 'No recipes available in the community',
             style: TextStyle(
               fontSize: ResponsiveController.fontSize(14),
               color: Colors.grey.shade500,
@@ -676,6 +847,20 @@ class _RecipeListScreenState extends State<RecipeListScreen> {
               onPressed: () => _navigateToRecipeForm(),
               icon: const Icon(Icons.add),
               label: const Text('Add Your First Recipe'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryColor,
+                padding: EdgeInsets.symmetric(
+                  horizontal: ResponsiveController.spacing(24),
+                  vertical: ResponsiveController.spacing(12),
+                ),
+              ),
+            ),
+          ] else ...[
+            SizedBox(height: ResponsiveController.spacing(24)),
+            ElevatedButton.icon(
+              onPressed: _manualRefresh,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Refresh'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primaryColor,
                 padding: EdgeInsets.symmetric(

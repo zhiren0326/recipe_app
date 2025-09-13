@@ -1,10 +1,12 @@
 // screens/recipe/recipe_detail_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:recipe_app/screens/recipe/recipe_type.dart';
 import '../../services/recipe_service.dart';
 import '../../services/auth_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/responsive_controller.dart';
+import '../../widgets/review_section.dart';
 import 'recipe_form_screen.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
@@ -36,6 +38,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
 
     try {
       await _recipeService.initialize();
+
+      // Refresh this specific recipe from Firebase
+      await _recipeService.refreshRecipe(widget.recipeId);
+
       final recipe = _recipeService.getRecipeById(widget.recipeId);
       setState(() {
         _recipe = recipe;
@@ -98,7 +104,21 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Recipe'),
-        content: Text('Are you sure you want to delete "${_recipe!.name}"?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to delete "${_recipe!.name}"?'),
+            const SizedBox(height: 8),
+            Text(
+              'This will also delete all reviews for this recipe.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -117,8 +137,21 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
 
     if (confirmed == true) {
       try {
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+
         await _recipeService.deleteRecipe(widget.recipeId);
+
         if (mounted) {
+          // Remove loading indicator
+          Navigator.pop(context);
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Recipe deleted successfully'),
@@ -129,6 +162,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         }
       } catch (e) {
         if (mounted) {
+          // Remove loading indicator if still showing
+          Navigator.pop(context);
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Error deleting recipe: $e'),
@@ -138,6 +174,57 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         }
       }
     }
+  }
+
+  // Helper method to build image widget that handles both base64 and URLs
+  Widget _buildRecipeImage(String imageUrl, {BoxFit fit = BoxFit.cover}) {
+    if (imageUrl.startsWith('data:image')) {
+      // Base64 image
+      try {
+        final base64String = imageUrl.split(',').last;
+        final bytes = base64Decode(base64String);
+        return Image.memory(
+          bytes,
+          fit: fit,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildImagePlaceholder();
+          },
+        );
+      } catch (e) {
+        return _buildImagePlaceholder();
+      }
+    } else {
+      // Regular URL
+      return Image.network(
+        imageUrl,
+        fit: fit,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                  loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          return _buildImagePlaceholder();
+        },
+      );
+    }
+  }
+
+  Widget _buildImagePlaceholder() {
+    return Container(
+      color: Colors.grey.shade300,
+      child: Icon(
+        Icons.restaurant,
+        size: 60,
+        color: Colors.grey.shade500,
+      ),
+    );
   }
 
   @override
@@ -185,30 +272,36 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         final isOwner = user != null && _recipe!.createdBy == user.uid;
 
         return Scaffold(
-          body: CustomScrollView(
-            slivers: [
-              _buildSliverAppBar(isOwner),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: ResponsiveController.padding(all: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildCreatorInfo(),
-                      ResponsiveSpacing(height: 16),
-                      _buildRecipeInfo(),
-                      ResponsiveSpacing(height: 24),
-                      _buildDescription(),
-                      ResponsiveSpacing(height: 24),
-                      _buildIngredients(),
-                      ResponsiveSpacing(height: 24),
-                      _buildSteps(),
-                      ResponsiveSpacing(height: 40),
-                    ],
+          body: RefreshIndicator(
+            onRefresh: _loadRecipe,
+            child: CustomScrollView(
+              slivers: [
+                _buildSliverAppBar(isOwner),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: ResponsiveController.padding(all: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildCreatorInfo(),
+                        ResponsiveSpacing(height: 16),
+                        _buildRecipeInfo(),
+                        ResponsiveSpacing(height: 24),
+                        _buildDescription(),
+                        ResponsiveSpacing(height: 24),
+                        _buildIngredients(),
+                        ResponsiveSpacing(height: 24),
+                        _buildSteps(),
+                        ResponsiveSpacing(height: 32),
+                        // Add Reviews Section
+                        _buildReviewsSection(),
+                        ResponsiveSpacing(height: 40),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           floatingActionButton: isOwner ? _buildFloatingActionButtons() : null,
         );
@@ -237,20 +330,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            Image.network(
-              _recipe!.imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  color: Colors.grey.shade300,
-                  child: Icon(
-                    Icons.restaurant,
-                    size: 60,
-                    color: Colors.grey.shade500,
-                  ),
-                );
-              },
-            ),
+            // Use the helper method to display image
+            _buildRecipeImage(_recipe!.imageUrl),
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -418,7 +499,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                 _buildInfoItem(
                   Icons.star,
                   'Rating',
-                  _recipe!.rating.toString(),
+                  _recipe!.averageRating != null && _recipe!.totalRatings != null && _recipe!.totalRatings! > 0
+                      ? '${_recipe!.averageRating!.toStringAsFixed(1)} (${_recipe!.totalRatings})'
+                      : _recipe!.rating.toStringAsFixed(1),
                   color: Colors.amber,
                 ),
               ],
@@ -623,6 +706,15 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           );
         }),
       ],
+    );
+  }
+
+  // Add Reviews Section with a unique key to ensure proper rebuilds
+  Widget _buildReviewsSection() {
+    return ReviewSection(
+      key: ValueKey('review_section_${widget.recipeId}'),
+      recipeId: widget.recipeId,
+      recipeOwnerId: _recipe!.createdBy,
     );
   }
 

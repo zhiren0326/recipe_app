@@ -18,7 +18,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final AuthService _authService = AuthService();
   final RecipeService _recipeService = RecipeService();
-  Map<String, int> _stats = {};
+  Map<String, dynamic> _stats = {}; // Changed from Map<String, int> to Map<String, dynamic>
   bool _isLoading = true;
 
   @override
@@ -43,7 +43,10 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading data: $e')),
+          SnackBar(
+            content: Text('Error loading data: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -81,9 +84,22 @@ class _HomeScreenState extends State<HomeScreen> {
                               (route) => false,
                         );
                       }
+                    } else if (value == 'profile') {
+                      // Show user profile dialog
+                      _showUserProfileDialog();
                     }
                   },
                   itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'profile',
+                      child: Row(
+                        children: [
+                          Icon(Icons.person, color: AppColors.primaryColor),
+                          const SizedBox(width: 8),
+                          Text(user?.displayName ?? user?.email ?? 'Profile'),
+                        ],
+                      ),
+                    ),
                     const PopupMenuItem(
                       value: 'logout',
                       child: Row(
@@ -109,14 +125,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      ResponsiveIcon(
-                        Icons.restaurant_menu,
-                        baseSize: 80,
-                        color: AppColors.primaryColor,
+                      // User Avatar
+                      CircleAvatar(
+                        radius: ResponsiveController.iconSize(40),
+                        backgroundColor: AppColors.primaryColor,
+                        child: Text(
+                          (user?.displayName ?? user?.email ?? 'U')[0].toUpperCase(),
+                          style: TextStyle(
+                            fontSize: ResponsiveController.fontSize(24),
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
-                      ResponsiveSpacing(height: 30),
+                      ResponsiveSpacing(height: 20),
                       ResponsiveText(
-                        'Welcome to Recipe Manager!',
+                        'Welcome Back!',
                         baseSize: 24,
                         fontWeight: FontWeight.bold,
                         textAlign: TextAlign.center,
@@ -146,7 +170,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
                       ResponsiveSpacing(height: 30),
 
-                      // Recent Activity (placeholder for future implementation)
+                      // Category Breakdown
+                      if (_stats.isNotEmpty && _stats['categoryBreakdown'] != null)
+                        _buildCategoryBreakdown(),
+
+                      ResponsiveSpacing(height: 30),
+
+                      // Recent Activity
                       _buildRecentActivity(),
 
                       ResponsiveSpacing(height: 40),
@@ -261,6 +291,11 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
+    // Safely extract values with null checks
+    final total = _stats['total'] ?? 0;
+    final categories = _stats['categories'] ?? 0;
+    final avgRating = _stats['avgRating'] ?? 0;
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -282,19 +317,20 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildStatItem(
-                  _stats['total']?.toString() ?? '0',
+                  total.toString(),
                   'Total Recipes',
                   Icons.restaurant,
                 ),
                 _buildStatItem(
-                  _stats['categories']?.toString() ?? '0',
+                  categories.toString(),
                   'Categories',
                   Icons.category,
                 ),
                 _buildStatItem(
-                  _stats['avgRating']?.toString() ?? '0',
+                  avgRating.toString(),
                   'Avg Rating',
                   Icons.star,
+                  color: Colors.amber,
                 ),
               ],
             ),
@@ -304,13 +340,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildStatItem(String value, String label, IconData icon) {
+  Widget _buildStatItem(String value, String label, IconData icon, {Color? color}) {
     return Column(
       children: [
         Icon(
           icon,
           size: ResponsiveController.iconSize(24),
-          color: AppColors.primaryColor,
+          color: color ?? AppColors.primaryColor,
         ),
         ResponsiveSpacing(height: 8),
         ResponsiveText(
@@ -324,6 +360,62 @@ class _HomeScreenState extends State<HomeScreen> {
           color: Colors.grey[600],
         ),
       ],
+    );
+  }
+
+  Widget _buildCategoryBreakdown() {
+    final categoryBreakdown = _stats['categoryBreakdown'] as Map<String, int>? ?? {};
+
+    if (categoryBreakdown.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(
+          ResponsiveController.borderRadius(12),
+        ),
+      ),
+      child: Padding(
+        padding: ResponsiveController.padding(all: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ResponsiveText(
+              'Categories Breakdown',
+              baseSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+            ResponsiveSpacing(height: 16),
+            ...categoryBreakdown.entries.map((entry) {
+              final percentage = (_stats['total'] != null && _stats['total'] > 0)
+                  ? ((entry.value / _stats['total']) * 100).toStringAsFixed(0)
+                  : '0';
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ResponsiveText(
+                        entry.key,
+                        baseSize: 14,
+                      ),
+                    ),
+                    ResponsiveText(
+                      '${entry.value} ($percentage%)',
+                      baseSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primaryColor,
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
     );
   }
 
@@ -360,6 +452,11 @@ class _HomeScreenState extends State<HomeScreen> {
               Icons.share,
               'Your recipes are synced across all your devices',
             ),
+            ResponsiveSpacing(height: 12),
+            _buildTipItem(
+              Icons.cloud_sync,
+              'Pull down to refresh and sync with cloud',
+            ),
           ],
         ),
       ),
@@ -383,6 +480,49 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showUserProfileDialog() {
+    final user = _authService.currentUser;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('User Profile'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: const Text('Name'),
+              subtitle: Text(user?.displayName ?? 'Not set'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.email),
+              title: const Text('Email'),
+              subtitle: Text(user?.email ?? 'Not available'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.verified_user),
+              title: const Text('Email Verified'),
+              subtitle: Text(user?.emailVerified == true ? 'Yes' : 'No'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.key),
+              title: const Text('User ID'),
+              subtitle: Text(user?.uid ?? 'Not available'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 }

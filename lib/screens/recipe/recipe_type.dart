@@ -1,4 +1,4 @@
-// models/recipe_type.dart
+// screens/recipe/recipe_type.dart
 class RecipeType {
   final String id;
   final String name;
@@ -49,12 +49,14 @@ class Recipe {
   final int cookingTime; // in minutes
   final int servings;
   final String difficulty; // Easy, Medium, Hard
-  final double rating;
+  final double rating; // Initial rating set by creator
   final String createdBy; // User UID
   final String createdByName; // User display name or email
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? firebaseId; // Firebase document ID
+  final double? averageRating; // Average rating from user reviews
+  final int? totalRatings; // Total number of user ratings
 
   Recipe({
     required this.id,
@@ -75,6 +77,8 @@ class Recipe {
     required this.createdAt,
     required this.updatedAt,
     this.firebaseId,
+    this.averageRating,
+    this.totalRatings,
   });
 
   factory Recipe.fromJson(Map<String, dynamic> json) {
@@ -97,6 +101,8 @@ class Recipe {
       createdAt: DateTime.parse(json['createdAt']),
       updatedAt: DateTime.parse(json['updatedAt']),
       firebaseId: json['firebaseId'],
+      averageRating: json['averageRating']?.toDouble(),
+      totalRatings: json['totalRatings'] ?? 0,
     );
   }
 
@@ -120,6 +126,8 @@ class Recipe {
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       if (firebaseId != null) 'firebaseId': firebaseId,
+      if (averageRating != null) 'averageRating': averageRating,
+      if (totalRatings != null) 'totalRatings': totalRatings,
     };
   }
 
@@ -142,6 +150,8 @@ class Recipe {
     DateTime? createdAt,
     DateTime? updatedAt,
     String? firebaseId,
+    double? averageRating,
+    int? totalRatings,
   }) {
     return Recipe(
       id: id ?? this.id,
@@ -162,6 +172,8 @@ class Recipe {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       firebaseId: firebaseId ?? this.firebaseId,
+      averageRating: averageRating ?? this.averageRating,
+      totalRatings: totalRatings ?? this.totalRatings,
     );
   }
 
@@ -187,4 +199,16 @@ class Recipe {
   }
 
   int get totalTime => preparationTime + cookingTime;
+
+  // New helper methods for rating display
+  double get displayRating => averageRating ?? rating;
+
+  String get ratingDisplayText {
+    if (totalRatings != null && totalRatings! > 0) {
+      return '${displayRating.toStringAsFixed(1)} (${totalRatings} review${totalRatings != 1 ? 's' : ''})';
+    }
+    return displayRating.toStringAsFixed(1);
+  }
+
+  bool get hasUserReviews => totalRatings != null && totalRatings! > 0;
 }

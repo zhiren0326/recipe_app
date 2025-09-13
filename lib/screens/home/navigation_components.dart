@@ -1,4 +1,4 @@
-// widgets/navigation_components.dart
+// widgets/navigation_components.dart (Updated)
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -8,6 +8,7 @@ import '../../utils/responsive_controller.dart';
 import '../auth/login_screen.dart';
 import '../recipe/recipe_form_screen.dart';
 import '../recipe/recipe_list_screen.dart';
+import '../profile/profile_screen.dart';
 import 'home_screen.dart';
 
 class MainNavigationWrapper extends StatefulWidget {
@@ -36,6 +37,7 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
     const HomeScreen(),
     const RecipeListScreen(),
     const RecipeFormScreen(),
+    const ProfileScreen(),
   ];
 
   final List<BottomNavigationBarItem> _navItems = [
@@ -50,6 +52,10 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
     const BottomNavigationBarItem(
       icon: Icon(Icons.add),
       label: 'Add Recipe',
+    ),
+    const BottomNavigationBarItem(
+      icon: Icon(Icons.person),
+      label: 'Profile',
     ),
   ];
 
@@ -175,45 +181,64 @@ class AppSidebar extends StatelessWidget {
           child: Column(
             children: [
               // User Profile Section
-              Container(
-                padding: ResponsiveController.padding(all: 20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.primaryColor,
-                      AppColors.primaryColor.withOpacity(0.8),
+              GestureDetector(
+                onTap: () => onItemSelected(3), // Navigate to profile
+                child: Container(
+                  padding: ResponsiveController.padding(all: 20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.primaryColor,
+                        AppColors.primaryColor.withOpacity(0.8),
+                      ],
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Hero(
+                        tag: 'profile_avatar',
+                        child: CircleAvatar(
+                          radius: ResponsiveController.iconSize(30),
+                          backgroundColor: Colors.white,
+                          child: Icon(
+                            Icons.person,
+                            size: ResponsiveController.iconSize(30),
+                            color: AppColors.primaryColor,
+                          ),
+                        ),
+                      ),
+                      ResponsiveSpacing(height: 12),
+                      ResponsiveText(
+                        user?.displayName ?? user?.email ?? 'Chef',
+                        baseSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        textAlign: TextAlign.center,
+                      ),
+                      ResponsiveSpacing(height: 4),
+                      ResponsiveText(
+                        'Recipe Manager',
+                        baseSize: 12,
+                        color: Colors.white.withOpacity(0.8),
+                        textAlign: TextAlign.center,
+                      ),
+                      ResponsiveSpacing(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ResponsiveText(
+                          'Tap to view profile',
+                          baseSize: 10,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                      ),
                     ],
                   ),
-                ),
-                child: Column(
-                  children: [
-                    CircleAvatar(
-                      radius: ResponsiveController.iconSize(30),
-                      backgroundColor: Colors.white,
-                      child: Icon(
-                        Icons.person,
-                        size: ResponsiveController.iconSize(30),
-                        color: AppColors.primaryColor,
-                      ),
-                    ),
-                    ResponsiveSpacing(height: 12),
-                    ResponsiveText(
-                      user?.displayName ?? user?.email ?? 'Chef',
-                      baseSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      textAlign: TextAlign.center,
-                    ),
-                    ResponsiveSpacing(height: 4),
-                    ResponsiveText(
-                      'Recipe Manager',
-                      baseSize: 12,
-                      color: Colors.white.withOpacity(0.8),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
                 ),
               ),
 
@@ -242,6 +267,13 @@ class AppSidebar extends StatelessWidget {
                       title: 'Add Recipe',
                       index: 2,
                       isSelected: currentIndex == 2,
+                    ),
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.person,
+                      title: 'Profile',
+                      index: 3,
+                      isSelected: currentIndex == 3,
                     ),
                     const Divider(),
                     _buildNavItem(
@@ -328,11 +360,18 @@ class AppSidebar extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Settings'),
-        content: const Text('Settings page coming soon!'),
+        content: const Text('Settings page coming soon! Use the Profile page to manage your account settings.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('OK'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              onItemSelected(3); // Navigate to profile
+            },
+            child: const Text('Go to Profile'),
           ),
         ],
       ),
