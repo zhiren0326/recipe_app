@@ -323,25 +323,63 @@ class _RecipeListScreenState extends State<RecipeListScreen> with TickerProvider
           )
               : FadeTransition(
             opacity: _fadeAnimation,
-            child: Column(
-              children: [
-                _buildSearchAndFilter(),
-                if (_isSyncing)
-                  LinearProgressIndicator(
-                    backgroundColor: Colors.grey[200],
-                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
-                  ),
-                Expanded(
-                  child: _filteredRecipes.isEmpty
-                      ? _buildEmptyState()
-                      : _buildRecipeGrid(),
-                ),
-              ],
-            ),
+            child: _buildScrollableContent(),
           ),
           floatingActionButton: _buildFloatingActionButton(),
         );
       },
+    );
+  }
+
+  // New method for scrollable content using CustomScrollView
+  Widget _buildScrollableContent() {
+    return RefreshIndicator(
+      onRefresh: _manualRefresh,
+      color: AppColors.primaryColor,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          // Search and Filter Section as Sliver
+          SliverToBoxAdapter(
+            child: _buildSearchAndFilter(),
+          ),
+
+          // Progress Indicator
+          if (_isSyncing)
+            SliverToBoxAdapter(
+              child: LinearProgressIndicator(
+                backgroundColor: Colors.grey[200],
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
+              ),
+            ),
+
+          // Content Area
+          if (_filteredRecipes.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _buildEmptyState(),
+            )
+          else
+            SliverPadding(
+              padding: EdgeInsets.all(ResponsiveController.spacing(20)),
+              sliver: SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: ResponsiveController.isTablet ? 3 : 2,
+                  childAspectRatio: 0.60,
+                  crossAxisSpacing: ResponsiveController.spacing(16),
+                  mainAxisSpacing: ResponsiveController.spacing(16),
+                ),
+                delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                    final recipe = _filteredRecipes[index];
+                    return _buildModernRecipeCard(recipe, index);
+                  },
+                  childCount: _filteredRecipes.length,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -366,21 +404,23 @@ class _RecipeListScreenState extends State<RecipeListScreen> with TickerProvider
             ),
           ),
           ResponsiveSpacing(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ResponsiveText(
-                _showOnlyMyRecipes ? 'My Recipes' : 'All Recipes',
-                baseSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-              ResponsiveText(
-                '${_filteredRecipes.length} recipes',
-                baseSize: 12,
-                color: Colors.grey[600],
-              ),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ResponsiveText(
+                  _showOnlyMyRecipes ? 'My Recipes' : 'All Recipes',
+                  baseSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+                ResponsiveText(
+                  '${_filteredRecipes.length} recipes',
+                  baseSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -661,30 +701,6 @@ class _RecipeListScreenState extends State<RecipeListScreen> with TickerProvider
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildRecipeGrid() {
-    ResponsiveController.init(context);
-
-    return RefreshIndicator(
-      onRefresh: _manualRefresh,
-      color: AppColors.primaryColor,
-      child: GridView.builder(
-        padding: EdgeInsets.all(ResponsiveController.spacing(20)),
-        physics: const BouncingScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: ResponsiveController.isTablet ? 3 : 2,
-          childAspectRatio: 0.72,
-          crossAxisSpacing: ResponsiveController.spacing(16),
-          mainAxisSpacing: ResponsiveController.spacing(16),
-        ),
-        itemCount: _filteredRecipes.length,
-        itemBuilder: (context, index) {
-          final recipe = _filteredRecipes[index];
-          return _buildModernRecipeCard(recipe, index);
-        },
       ),
     );
   }

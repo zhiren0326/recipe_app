@@ -169,15 +169,15 @@ class ResponsiveController {
     return isLandscape ? (tablet ?? mobile) : mobile;
   }
 
-  /// Get responsive button height
+  /// Get responsive button height - FIXED TO ACCEPT 'mobile' PARAMETER
   static double buttonHeight({
-    double mobile = 48,
+    double mobile = 48,  // This is the key fix - accepting 'mobile' as named parameter
     double? tablet,
     double? desktop,
   }) {
     if (isDesktop) return desktop ?? 56;
     if (isTablet) return tablet ?? 52;
-    if (isSmallPhone) return 44;
+    if (isSmallPhone) return mobile * 0.92;  // Slightly smaller for small phones
     return mobile;
   }
 

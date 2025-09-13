@@ -26,7 +26,7 @@ List<RecipeBundle> recipeBundles = [
     id: 1,
     chefs: 16,
     recipes: 95,
-    title: "Cook Something New Everyday",
+    title: "Cook Something New",
     description: "New and tasty recipes every time",
     color: const Color(0xFFD82D40),
   ),
